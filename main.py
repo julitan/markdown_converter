@@ -1,5 +1,6 @@
 """
-PDF to Markdown Converter (Flask Web UI)
+Document to Markdown Converter (Flask Web UI)
+- PDF, DOC, DOCX 파일을 Markdown으로 변환
 """
 import argparse
 import tempfile
@@ -57,7 +58,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PDF to Markdown</title>
+<title>Document to Markdown</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;background:#f0f2f5;color:#333;min-height:100vh;display:flex;justify-content:center;padding:40px 16px}
@@ -96,15 +97,15 @@ h1{font-size:22px;margin-bottom:24px;text-align:center}
 </head>
 <body>
 <div class="container">
-<h1>PDF to Markdown</h1>
+<h1>Document to Markdown</h1>
 <div class="tabs">
-<button class="tab-btn active" data-tab="single">PDF 파일 변환</button>
+<button class="tab-btn active" data-tab="single">파일 변환</button>
 <button class="tab-btn" data-tab="batch">폴더 일괄 변환</button>
 </div>
 <div id="tab-single" class="tab-panel active">
 <div class="drop-zone" id="drop-zone">
-<input type="file" id="file-input" accept=".pdf">
-<div class="drop-zone-text">PDF 파일을 여기에 <strong>드래그</strong>하거나 <strong>클릭</strong>하여 선택하세요</div>
+<input type="file" id="file-input" accept=".pdf,.doc,.docx">
+<div class="drop-zone-text">PDF / DOC / DOCX 파일을 여기에 <strong>드래그</strong>하거나 <strong>클릭</strong>하여 선택하세요</div>
 <div class="drop-zone-file" id="drop-zone-file"></div>
 </div>
 <div class="checkbox-group">
@@ -148,8 +149,9 @@ dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over')
 dropZone.addEventListener('drop',e=>{
 e.preventDefault();dropZone.classList.remove('drag-over');
 const f=e.dataTransfer.files;
-if(f.length>0&&f[0].name.toLowerCase().endsWith('.pdf')){selectedFile=f[0];dropZoneFile.textContent=selectedFile.name}
-else{dropZoneFile.textContent='PDF 파일만 선택 가능합니다.'}
+const fn=f[0].name.toLowerCase();
+if(f.length>0&&(fn.endsWith('.pdf')||fn.endsWith('.doc')||fn.endsWith('.docx'))){selectedFile=f[0];dropZoneFile.textContent=selectedFile.name}
+else{dropZoneFile.textContent='PDF, DOC, DOCX 파일만 선택 가능합니다.'}
 });
 fileInput.addEventListener('change',()=>{if(fileInput.files.length>0){selectedFile=fileInput.files[0];dropZoneFile.textContent=selectedFile.name}});
 document.addEventListener('dragover',e=>e.preventDefault());
@@ -165,7 +167,7 @@ logBox.innerHTML='';lastLogCount=0;progressFill.style.width='0%';downloadBtn.sty
 if(currentTab==='single')await startUpload();else await startBatch();
 });
 async function startUpload(){
-if(!selectedFile){appendLog('[오류] PDF 파일을 선택해주세요.','fail');return}
+if(!selectedFile){appendLog('[오류] 파일을 선택해주세요 (PDF, DOC, DOCX).','fail');return}
 const fd=new FormData();fd.append('file',selectedFile);fd.append('save_images',document.getElementById('single-images').checked);
 try{const r=await fetch('/upload',{method:'POST',body:fd});const d=await r.json();
 if(d.error){appendLog(d.error,'fail');return}convertBtn.disabled=true;startPolling(true)}
@@ -215,15 +217,16 @@ def upload_convert():
         return jsonify({"error": "파일이 없습니다."}), 400
 
     file = request.files["file"]
-    if not file.filename.lower().endswith(".pdf"):
-        return jsonify({"error": "PDF 파일이 아닙니다."}), 400
+    allowed_ext = (".pdf", ".doc", ".docx")
+    if not file.filename.lower().endswith(allowed_ext):
+        return jsonify({"error": "PDF, DOC, DOCX 파일만 지원합니다."}), 400
 
     save_images = request.form.get("save_images", "true") == "true"
 
-    # PDF를 임시 파일로 저장 (변환 후 삭제)
+    # 파일을 임시 디렉토리에 저장 (변환 후 삭제)
     tmp_dir = tempfile.mkdtemp()
-    pdf_path = Path(tmp_dir) / file.filename
-    file.save(str(pdf_path))
+    file_path = Path(tmp_dir) / file.filename
+    file.save(str(file_path))
 
     # 결과 저장 폴더 (output/파일명/)
     out_dir = OUTPUT_DIR / Path(file.filename).stem
@@ -232,7 +235,7 @@ def upload_convert():
     _reset_state()
     _set(running=True)
     threading.Thread(
-        target=_convert_uploaded, args=(pdf_path, out_dir, save_images), daemon=True
+        target=_convert_uploaded, args=(file_path, out_dir, save_images), daemon=True
     ).start()
     return jsonify({"ok": True})
 
@@ -293,33 +296,42 @@ def _run_convert(data: dict):
         _set(running=False)
 
 
-def _convert_uploaded(pdf_path: Path, output_dir: Path, save_images: bool):
+def _convert_uploaded(file_path: Path, output_dir: Path, save_images: bool):
     try:
-        from converter import convert_pdf
-        _set(status=f"변환 중: {pdf_path.name}", progress=0)
-        _log(f"변환 시작: {pdf_path.name}")
+        _set(status=f"변환 중: {file_path.name}", progress=0)
+        _log(f"변환 시작: {file_path.name}")
 
-        result = convert_pdf(pdf_path, output_dir, save_images=save_images)
+        ext = file_path.suffix.lower()
+        if ext == ".pdf":
+            from converter import convert_pdf
+            result = convert_pdf(file_path, output_dir, save_images=save_images)
+        elif ext in (".doc", ".docx"):
+            from converter import convert_docx
+            result = convert_docx(file_path, output_dir, save_images=save_images)
+        else:
+            _log(f"[실패] 지원하지 않는 형식: {ext}")
+            _set(status="오류", progress=0)
+            return
 
         if result.success:
-            md_path = output_dir / (pdf_path.stem + ".md")
+            md_path = output_dir / (file_path.stem + ".md")
             with _lock:
                 _state["result_path"] = str(md_path)
-            msg = f"[성공] {pdf_path.name} → 변환 완료"
+            msg = f"[성공] {file_path.name} → 변환 완료"
             if result.images and save_images:
                 msg += f" (이미지 {len(result.images)}개)"
             _log(msg)
         else:
-            _log(f"[실패] {pdf_path.name}: {result.error}")
+            _log(f"[실패] {file_path.name}: {result.error}")
 
         _set(status="완료", progress=100)
     except Exception as e:
         _log(f"[오류] 예외 발생: {e}")
     finally:
-        # 임시 PDF 파일 정리
+        # 임시 파일 정리
         try:
-            pdf_path.unlink(missing_ok=True)
-            pdf_path.parent.rmdir()
+            file_path.unlink(missing_ok=True)
+            file_path.parent.rmdir()
         except OSError:
             pass
         _set(running=False)
@@ -327,7 +339,7 @@ def _convert_uploaded(pdf_path: Path, output_dir: Path, save_images: bool):
 
 def _convert_batch(data: dict):
     try:
-        from converter import convert_pdf
+        from converter import convert_pdf, convert_docx
     except ImportError as e:
         _log(f"[오류] 필요한 라이브러리가 설치되지 않았습니다: {e}")
         _set(status="오류", progress=0)
@@ -338,38 +350,48 @@ def _convert_batch(data: dict):
     save_images = data.get("save_images", True)
     recursive = data.get("recursive", False)
 
-    pdf_files = list(input_dir.rglob("*.pdf") if recursive else input_dir.glob("*.pdf"))
+    # PDF + DOC + DOCX 파일 수집
+    all_files = []
+    for ext in ("*.pdf", "*.doc", "*.docx"):
+        if recursive:
+            all_files.extend(input_dir.rglob(ext))
+        else:
+            all_files.extend(input_dir.glob(ext))
 
-    if not pdf_files:
-        _log("[알림] PDF 파일이 없습니다.")
+    if not all_files:
+        _log("[알림] 변환할 파일이 없습니다 (PDF, DOC, DOCX).")
         _set(status="완료", progress=100)
         return
 
-    total = len(pdf_files)
-    _log(f"총 {total}개 PDF 파일 발견")
+    total = len(all_files)
+    _log(f"총 {total}개 파일 발견 (PDF/DOC/DOCX)")
     success_count = 0
     fail_count = 0
 
-    for i, pdf_path in enumerate(pdf_files, 1):
-        _set(status=f"변환 중: {pdf_path.name} ({i}/{total})", progress=((i - 1) / total) * 100)
+    for i, file_path in enumerate(all_files, 1):
+        _set(status=f"변환 중: {file_path.name} ({i}/{total})", progress=((i - 1) / total) * 100)
 
         if recursive and output_dir:
-            relative_path = pdf_path.parent.relative_to(input_dir)
+            relative_path = file_path.parent.relative_to(input_dir)
             current_output = output_dir / relative_path
         else:
             current_output = output_dir
 
-        result = convert_pdf(pdf_path, current_output, save_images=save_images)
+        ext = file_path.suffix.lower()
+        if ext == ".pdf":
+            result = convert_pdf(file_path, current_output, save_images=save_images)
+        else:
+            result = convert_docx(file_path, current_output, save_images=save_images)
 
         if result.success:
             success_count += 1
-            msg = f"[성공] {pdf_path.name}"
+            msg = f"[성공] {file_path.name}"
             if result.images and save_images:
                 msg += f" (이미지 {len(result.images)}개)"
             _log(msg)
         else:
             fail_count += 1
-            _log(f"[실패] {pdf_path.name}: {result.error}")
+            _log(f"[실패] {file_path.name}: {result.error}")
 
     _set(status="완료", progress=100)
     _log(f"\n--- 결과: 성공 {success_count}개 / 실패 {fail_count}개 / 총 {total}개 ---")
