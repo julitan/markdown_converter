@@ -44,7 +44,13 @@ def _get_converter():
     """PdfConverter 인스턴스를 가져오거나 생성 (재사용)"""
     global _converter
     if _converter is None:
-        _converter = PdfConverter(artifact_dict=_get_models())
+        _converter = PdfConverter(
+            artifact_dict=_get_models(),
+            config={
+                "recognition_batch_size": 64,
+                "ray_batch_size": 64,
+            },
+        )
     return _converter
 
 
