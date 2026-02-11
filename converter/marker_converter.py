@@ -93,10 +93,13 @@ def convert_pdf(
     try:
         # Marker 변환 수행 (캐싱된 컨버터 재사용)
         converter = _get_converter()
+        print(f"[후처리] converter 호출 시작: {pdf_path.name}")
         rendered = converter(str(pdf_path))
+        print(f"[후처리] converter 완료, text_from_rendered 시작")
 
         # 마크다운 텍스트 추출 (marker-pdf 1.10+ API)
         markdown_text, _, images = text_from_rendered(rendered)
+        print(f"[후처리] text_from_rendered 완료 (이미지 {len(images) if images else 0}개)")
 
         # 이미지 별도 폴더에 저장 + 마크다운 내 경로를 폴더 상대경로로 수정
         if save_images and images:

@@ -228,8 +228,8 @@ def upload_convert():
     file_path = Path(tmp_dir) / file.filename
     file.save(str(file_path))
 
-    # 결과 저장 폴더 (output/파일명/)
-    out_dir = OUTPUT_DIR / Path(file.filename).stem
+    # 결과 저장 폴더 (output/ 직접)
+    out_dir = OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     _reset_state()
