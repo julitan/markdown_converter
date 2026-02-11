@@ -50,8 +50,8 @@ def _get_converter():
         _converter = PdfConverter(
             artifact_dict=_get_models(),
             config={
-                "recognition_batch_size": 64,
-                "ray_batch_size": 64,
+                "recognition_batch_size": 32,
+                "ray_batch_size": 32,
                 "drop_repeated_text": True,
                 "drop_repeated_table_text": True,
             },
