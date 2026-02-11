@@ -6,6 +6,9 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
+# Windows MKL 메모리 누수 방지 (KMeans 후처리 멈춤 해결)
+os.environ["OMP_NUM_THREADS"] = "1"
+
 # GPU 사용 (CUDA 가능 시)
 import torch
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
