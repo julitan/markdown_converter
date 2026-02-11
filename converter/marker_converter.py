@@ -52,6 +52,8 @@ def _get_converter():
             config={
                 "recognition_batch_size": 64,
                 "ray_batch_size": 64,
+                "drop_repeated_text": True,
+                "drop_repeated_table_text": True,
             },
         )
     return _converter
