@@ -1,6 +1,6 @@
 """
 Document to Markdown Converter (Flask Web UI)
-- PDF, DOC, DOCX 파일을 Markdown으로 변환
+- PDF, DOC, DOCX, XLS, XLSX 파일을 Markdown으로 변환
 """
 import argparse
 import tempfile
@@ -104,8 +104,8 @@ h1{font-size:22px;margin-bottom:24px;text-align:center}
 </div>
 <div id="tab-single" class="tab-panel active">
 <div class="drop-zone" id="drop-zone">
-<input type="file" id="file-input" accept=".pdf,.doc,.docx">
-<div class="drop-zone-text">PDF / DOC / DOCX 파일을 여기에 <strong>드래그</strong>하거나 <strong>클릭</strong>하여 선택하세요</div>
+<input type="file" id="file-input" accept=".pdf,.doc,.docx,.xls,.xlsx">
+<div class="drop-zone-text">PDF / DOC / DOCX / XLS / XLSX 파일을 여기에 <strong>드래그</strong>하거나 <strong>클릭</strong>하여 선택하세요</div>
 <div class="drop-zone-file" id="drop-zone-file"></div>
 </div>
 <div class="checkbox-group">
@@ -150,8 +150,8 @@ dropZone.addEventListener('drop',e=>{
 e.preventDefault();dropZone.classList.remove('drag-over');
 const f=e.dataTransfer.files;
 const fn=f[0].name.toLowerCase();
-if(f.length>0&&(fn.endsWith('.pdf')||fn.endsWith('.doc')||fn.endsWith('.docx'))){selectedFile=f[0];dropZoneFile.textContent=selectedFile.name}
-else{dropZoneFile.textContent='PDF, DOC, DOCX 파일만 선택 가능합니다.'}
+if(f.length>0&&(fn.endsWith('.pdf')||fn.endsWith('.doc')||fn.endsWith('.docx')||fn.endsWith('.xls')||fn.endsWith('.xlsx'))){selectedFile=f[0];dropZoneFile.textContent=selectedFile.name}
+else{dropZoneFile.textContent='PDF, DOC, DOCX, XLS, XLSX 파일만 선택 가능합니다.'}
 });
 fileInput.addEventListener('change',()=>{if(fileInput.files.length>0){selectedFile=fileInput.files[0];dropZoneFile.textContent=selectedFile.name}});
 document.addEventListener('dragover',e=>e.preventDefault());
@@ -167,7 +167,7 @@ logBox.innerHTML='';lastLogCount=0;progressFill.style.width='0%';downloadBtn.sty
 if(currentTab==='single')await startUpload();else await startBatch();
 });
 async function startUpload(){
-if(!selectedFile){appendLog('[오류] 파일을 선택해주세요 (PDF, DOC, DOCX).','fail');return}
+if(!selectedFile){appendLog('[오류] 파일을 선택해주세요 (PDF, DOC, DOCX, XLS, XLSX).','fail');return}
 const fd=new FormData();fd.append('file',selectedFile);fd.append('save_images',document.getElementById('single-images').checked);
 try{const r=await fetch('/upload',{method:'POST',body:fd});const d=await r.json();
 if(d.error){appendLog(d.error,'fail');return}convertBtn.disabled=true;startPolling(true)}
@@ -217,9 +217,9 @@ def upload_convert():
         return jsonify({"error": "파일이 없습니다."}), 400
 
     file = request.files["file"]
-    allowed_ext = (".pdf", ".doc", ".docx")
+    allowed_ext = (".pdf", ".doc", ".docx", ".xls", ".xlsx")
     if not file.filename.lower().endswith(allowed_ext):
-        return jsonify({"error": "PDF, DOC, DOCX 파일만 지원합니다."}), 400
+        return jsonify({"error": "PDF, DOC, DOCX, XLS, XLSX 파일만 지원합니다."}), 400
 
     save_images = request.form.get("save_images", "true") == "true"
 
@@ -308,6 +308,9 @@ def _convert_uploaded(file_path: Path, output_dir: Path, save_images: bool):
         elif ext in (".doc", ".docx"):
             from converter import convert_docx
             result = convert_docx(file_path, output_dir, save_images=save_images)
+        elif ext in (".xls", ".xlsx"):
+            from converter import convert_excel
+            result = convert_excel(file_path, output_dir, save_images=save_images)
         else:
             _log(f"[실패] 지원하지 않는 형식: {ext}")
             _set(status="오류", progress=0)
@@ -339,7 +342,7 @@ def _convert_uploaded(file_path: Path, output_dir: Path, save_images: bool):
 
 def _convert_batch(data: dict):
     try:
-        from converter import convert_pdf, convert_docx
+        from converter import convert_pdf, convert_docx, convert_excel
     except ImportError as e:
         _log(f"[오류] 필요한 라이브러리가 설치되지 않았습니다: {e}")
         _set(status="오류", progress=0)
@@ -350,21 +353,21 @@ def _convert_batch(data: dict):
     save_images = data.get("save_images", True)
     recursive = data.get("recursive", False)
 
-    # PDF + DOC + DOCX 파일 수집
+    # PDF + DOC + DOCX + XLS + XLSX 파일 수집
     all_files = []
-    for ext in ("*.pdf", "*.doc", "*.docx"):
+    for ext in ("*.pdf", "*.doc", "*.docx", "*.xls", "*.xlsx"):
         if recursive:
             all_files.extend(input_dir.rglob(ext))
         else:
             all_files.extend(input_dir.glob(ext))
 
     if not all_files:
-        _log("[알림] 변환할 파일이 없습니다 (PDF, DOC, DOCX).")
+        _log("[알림] 변환할 파일이 없습니다 (PDF, DOC, DOCX, XLS, XLSX).")
         _set(status="완료", progress=100)
         return
 
     total = len(all_files)
-    _log(f"총 {total}개 파일 발견 (PDF/DOC/DOCX)")
+    _log(f"총 {total}개 파일 발견 (PDF/DOC/DOCX/XLS/XLSX)")
     success_count = 0
     fail_count = 0
 
@@ -380,6 +383,8 @@ def _convert_batch(data: dict):
         ext = file_path.suffix.lower()
         if ext == ".pdf":
             result = convert_pdf(file_path, current_output, save_images=save_images)
+        elif ext in (".xls", ".xlsx"):
+            result = convert_excel(file_path, current_output, save_images=save_images)
         else:
             result = convert_docx(file_path, current_output, save_images=save_images)
 
